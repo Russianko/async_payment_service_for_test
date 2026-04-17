@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+asyncpg
+alembic
+pydantic>=2
+pydantic-settings
+psycopg2-binary
+faststream[rabbit]
+faststream[cli]
+aio-pika
+httpx

@@ -1,0 +1,9 @@
+{
+  "amount": 100.50,
+  "currency": "RUB",
+  "description": "Test payment",
+  "metadata": {
+    "order_id": "123"
+  },
+  "webhook_url": "https://example.com/webhook"
+}
