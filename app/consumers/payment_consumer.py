@@ -19,7 +19,7 @@ async def process_payment(message: dict, rabbit_message: RabbitMessage) -> None:
 
     payment_id = UUID(message["payment_id"])
 
-    # Имитация внешней обработки (например, PSP / банк / процессинг)
+    # Имитация внешней обработки (например, PSP/банк/процессинг)
     # В реальной системе здесь будет:
     # - вызов внешнего API
     # - или сложная бизнес-логика
@@ -32,7 +32,7 @@ async def process_payment(message: dict, rabbit_message: RabbitMessage) -> None:
     )
 
     async with AsyncSessionLocal() as session:
-        # Загружаем платеж из БД — БД является source of truth
+        # Загружаем платеж из БД - в данном случае БД является источником правды
         result = await session.execute(
             select(Payment).where(Payment.id == payment_id)
         )
@@ -45,7 +45,7 @@ async def process_payment(message: dict, rabbit_message: RabbitMessage) -> None:
             print("PAYMENT NOT FOUND:", payment_id)
             return
 
-        # ⚠️ ВАЖНО:
+        # ВАЖНО:
         # Здесь должна быть защита от повторной обработки.
         # Сейчас consumer НЕ идемпотентен.
         #
@@ -63,7 +63,6 @@ async def process_payment(message: dict, rabbit_message: RabbitMessage) -> None:
 
         try:
             # Публикуем событие для webhook доставки.
-            # Это отдельный этап — правильно.
             print("SENDING WEBHOOK EVENT:", payment.webhook_url)
 
             await broker.publish(
@@ -88,12 +87,12 @@ async def process_payment(message: dict, rabbit_message: RabbitMessage) -> None:
             print("WEBHOOK EVENT PUBLISHED")
 
         except Exception as e:
-            # ⚠️ ВАЖНО:
+            # ВАЖНО:
             # Здесь возможна потеря события:
             # платеж обновился, но webhook не отправился.
             #
             # Это классическая проблема:
-            # DB commit прошел → publish не прошел.
+            # DB commit прошел > publish не прошел.
             #
             # В проде решается через transactional outbox.
             print(f"Webhook send failed for payment {payment.id}: {e}")

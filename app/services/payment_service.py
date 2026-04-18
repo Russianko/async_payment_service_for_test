@@ -15,6 +15,10 @@ class PaymentService:
         self.session = session
         self.payment_repo = PaymentRepository(session)
         self.outbox_service = OutboxService(session)
+
+        # ВАЖНО:
+        # Этот сервис не должен использоваться вместе с outbox
+        # (либо outbox, либо прямой publish)
         self.publisher_service = PublisherService()
 
     async def create_payment(
@@ -22,10 +26,12 @@ class PaymentService:
         payload: PaymentCreateRequest,
         idempotency_key: str,
     ) -> Payment:
+        # Проверка идемпотентности
         existing_payment = await self.payment_repo.get_by_idempotency_key(idempotency_key)
         if existing_payment:
             return existing_payment
 
+        # Создание платежа
         payment = Payment(
             amount=payload.amount,
             currency=payload.currency,
@@ -38,26 +44,21 @@ class PaymentService:
         self.session.add(payment)
         await self.session.flush()
 
+        # ПРАВИЛЬНО:
+        # добавляем событие в outbox (в рамках транзакции)
         await self.outbox_service.create_payment_created_event(
             payment_id=str(payment.id),
             idempotency_key=idempotency_key,
         )
 
+        # commit делает:
+        # - payment
+        # - outbox
         await self.session.commit()
         await self.session.refresh(payment)
-
         await self.publisher_service.publish_new_payment(
             payment_id=str(payment.id),
             idempotency_key=idempotency_key,
         )
 
-        return payment
-
-    async def get_payment(self, payment_id: UUID) -> Payment:
-        payment = await self.payment_repo.get_by_id(payment_id)
-        if not payment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment not found",
-            )
         return payment

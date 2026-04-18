@@ -9,25 +9,30 @@ from app.models.payment import Payment
 from app.services.webhook_service import WebhookService
 
 
+# Максимальное количество попыток доставки webhook
 MAX_RETRIES = 3
 
 webhook_service = WebhookService()
 
+# Основная очередь отправки webhook
 webhook_send_queue = RabbitQueue(
     name="payments.webhook.send",
     durable=True,
 )
 
+# Очередь retry с TTL.
+# Сообщение "задерживается" и затем автоматически возвращается в send очередь.
 webhook_retry_queue = RabbitQueue(
     name="payments.webhook.retry",
     durable=True,
     arguments={
-        "x-message-ttl": 10000,
+        "x-message-ttl": 10000,  # задержка 10 секунд для тестового
         "x-dead-letter-exchange": "",
         "x-dead-letter-routing-key": "payments.webhook.send",
     },
 )
 
+# Очередь окончательно не доставленных webhook
 webhook_dlq_queue = RabbitQueue(
     name="payments.webhook.dlq",
     durable=True,
@@ -36,43 +41,65 @@ webhook_dlq_queue = RabbitQueue(
 
 @broker.subscriber(webhook_send_queue)
 async def process_webhook(event: dict) -> None:
+    # Получили событие доставки webhook
     print("WEBHOOK EVENT RECEIVED:", event)
 
     try:
-        print("TRYING WEBHOOK:", event["webhook_url"], "attempt=", event.get("attempt", 1))
+        print(
+            "TRYING WEBHOOK:",
+            event["webhook_url"],
+            "attempt=",
+            event.get("attempt", 1),
+        )
 
+        # Отправка HTTP webhook
         await webhook_service.send_payload(
             webhook_url=event["webhook_url"],
             payload=event,
         )
 
+        # Если дошли сюда - считаем доставку успешной
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Payment).where(Payment.id == event["payment_id"])
             )
             payment = result.scalar_one_or_none()
+
             if payment:
+                # Фиксируем успешную доставку
                 payment.webhook_delivered_at = datetime.now(timezone.utc)
                 payment.webhook_attempts = event.get("attempt", 1)
                 payment.webhook_last_error = None
+
                 await session.commit()
 
         print("WEBHOOK DELIVERED:", event["payment_id"])
 
     except Exception as e:
         attempt = event.get("attempt", 1)
-        print("WEBHOOK FAILED:", event["payment_id"], "attempt=", attempt, "error=", str(e))
 
+        print(
+            "WEBHOOK FAILED:",
+            event["payment_id"],
+            "attempt=",
+            attempt,
+            "error=",
+            str(e),
+        )
+
+        # Сохраняем информацию об ошибке
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(Payment).where(Payment.id == event["payment_id"])
             )
             payment = result.scalar_one_or_none()
+
             if payment:
                 payment.webhook_attempts = attempt
                 payment.webhook_last_error = str(e)
                 await session.commit()
 
+        # Если попытки закончились > DLQ
         if attempt >= MAX_RETRIES:
             print("SENDING TO DLQ:", event["payment_id"])
 
@@ -83,9 +110,16 @@ async def process_webhook(event: dict) -> None:
                 },
                 queue=webhook_dlq_queue.name,
             )
+
             return
 
-        print("SENDING TO RETRY:", event["payment_id"], "next_attempt=", attempt + 1)
+        # Иначе отправляем в retry очередь
+        print(
+            "SENDING TO RETRY:",
+            event["payment_id"],
+            "next_attempt=",
+            attempt + 1,
+        )
 
         await broker.publish(
             {

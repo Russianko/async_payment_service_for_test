@@ -7,7 +7,8 @@ from app.api.test_webhook import router as test_webhook_router
 from app.core.broker import broker
 from app.core.config import settings
 
-
+# Подключаемся к брокеру при старте API.
+# ВАЖНО: API не обрабатывает сообщения, только публикует.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await broker.connect()

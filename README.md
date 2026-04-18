@@ -1,5 +1,6 @@
 Payment Processing Service
-📌 Описание
+
+Описание
 
 Сервис обработки платежей с event-driven архитектурой.
 
@@ -10,7 +11,7 @@ Payment Processing Service
 асинхронную обработку через очередь
 webhook-уведомления
 retry и DLQ для доставки webhook
-🏗️ Архитектура
+Архитектура
 
 Компоненты системы:
 
@@ -22,28 +23,32 @@ RabbitMQ
 Очереди для асинхронной обработки и доставки webhook
 Consumers (FastStream)
 Обрабатывают платежи и webhook события
-🔁 Основной flow
+
+Основной flow
+
 Client
-  ↓
+↓
 POST /payments
-  ↓
+↓
 API
-  ├─ сохраняет payment в DB
-  ├─ сохраняет outbox event
-  └─ публикует message → payments.new
-  ↓
+├─ сохраняет payment в DB
+├─ сохраняет outbox event
+└─ публикует message → payments.new
+↓
 RabbitMQ
-  ↓
+↓
 payment_consumer
-  ├─ обрабатывает платёж (success / fail)
-  ├─ обновляет статус в DB
-  └─ публикует message → payments.webhook.send
-  ↓
+├─ обрабатывает платёж (success / fail)
+├─ обновляет статус в DB
+└─ публикует message → payments.webhook.send
+↓
 webhook_consumer
-  ├─ отправляет HTTP webhook
-  ├─ при ошибке → retry queue
-  └─ после лимита → DLQ
-🔌 API
+├─ отправляет HTTP webhook
+├─ при ошибке → retry queue
+└─ после лимита → DLQ
+
+API
+
 Создание платежа
 POST /api/v1/payments
 
@@ -71,9 +76,11 @@ Response:
   "status": "pending",
   "created_at": "..."
 }
+
 Получение платежа
+
 GET /api/v1/payments/{id}
-🔁 Webhook delivery
+Webhook delivery
 
 После обработки платежа отправляется HTTP callback:
 
@@ -86,14 +93,17 @@ GET /api/v1/payments/{id}
   "metadata": {...},
   "processed_at": "..."
 }
-🔄 Retry и DLQ
+Retry и DLQ
 
 Webhook delivery реализован через отдельный consumer.
 
 Retry политика
+
 до 3 попыток
 интервал ≈ 10 секунд (через RabbitMQ TTL)
+
 Очереди
+
 payments.webhook.send — основная очередь доставки
 payments.webhook.retry — очередь с задержкой (TTL + DLX)
 payments.webhook.dlq — очередь неудачных событий
@@ -101,7 +111,9 @@ payments.webhook.dlq — очередь неудачных событий
 attempt 1 → fail → retry
 attempt 2 → fail → retry
 attempt 3 → fail → DLQ
-🗄️ Модель данных (payments)
+
+Модель данных (payments)
+
 поле	описание
 id	UUID
 amount	сумма
@@ -113,15 +125,21 @@ processed_at	время обработки
 webhook_attempts	количество попыток
 webhook_delivered_at	время успешной доставки
 webhook_last_error	последняя ошибка
-⚙️ Запуск
+
+
 Требования
+
 Docker
 Docker Compose
+
 Запуск
+
 docker compose up --build -d
 Проверка
 curl http://127.0.0.1:8000/health
-🧪 Примеры тестирования
+
+Примеры тестирования
+
 Успешный webhook
 "webhook_url": "http://api:8000/test-webhook"
 
@@ -137,21 +155,22 @@ webhook_attempts = 1
 3 попытки доставки
 запись в DLQ
 webhook_last_error заполнен
-⚠️ Ограничения
+
+Ограничения
+
 outbox используется в упрощённом виде (без отдельного relay)
 retry фиксированный (без exponential backoff)
 нет дедупликации webhook событий
 consumers запускаются в одном процессе
-📈 Возможные улучшения
+В текущей реализации outbox сохраняется в БД, 
+но публикация события выполняется напрямую после commit. 
+Отдельный relay-worker сознательно не реализован в рамках тестового
+
+Возможные улучшения
+
 полноценный outbox relay
 exponential backoff
 идемпотентность webhook
 раздельные сервисы (payment / webhook)
 мониторинг и метрики
 circuit breaker для webhook
-💬 Итог
-
-Это выглядит как:
-
-не “учебный CRUD”
-а реальный backend с очередями, retry и отказоустойчивостью

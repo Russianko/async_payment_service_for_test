@@ -14,6 +14,11 @@ class OutboxService:
         payment_id: str,
         idempotency_key: str,
     ) -> OutboxEvent:
+        # Создаем событие в outbox
+
+        # ВАЖНО:
+        # - происходит в той же транзакции, что и payment
+        # - обеспечивает атомарность
         outbox_event = OutboxEvent(
             event_type="payments.new",
             payload={
@@ -21,4 +26,5 @@ class OutboxService:
                 "idempotency_key": idempotency_key,
             },
         )
+
         return await self.outbox_repo.add(outbox_event)
